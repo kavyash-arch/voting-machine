@@ -1,35 +1,38 @@
-import pymysql
-pymysql.install_as_MySQLdb()
-
-from flask import Flask, render_template, request, redirect, url_for, flash, session
-from flask_sqlalchemy import SQLAlchemy
-
 import random
 import string
 import time
 from datetime import datetime
+from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 import os
-from os import getenv
 
+# Flask app init
 app = Flask(__name__)
-app.secret_key = 'hello123'  # ⚠️ Use a strong key in production
+app.secret_key = 'hello123'  # Replace with secure key in production
 
-# Enable Flask-SocketIO with CORS to allow mobile/web access
+# Enable Flask-SocketIO
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Database config (change root:11111 and db name accordingly)
-DATABASE_URL = getenv('DATABASE_URL', 'mysql+pymysql://root:11111@127.0.0.1/voting_db')
-app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
+# ================= Database Config =================
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if DATABASE_URL:  # Example: mysql+pymysql://user:pass@host/db
+    app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
+else:  # Fallback to SQLite (works on Render)
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///voting.db'
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# DB init
 db = SQLAlchemy(app)
 
-# Login manager setup
+# ================= Login Manager =================
 login_manager = LoginManager(app)
 login_manager.login_view = 'home'
 
-# -------------------- MODELS --------------------
+# ================= Models =================
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
@@ -46,26 +49,22 @@ class Idea(db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# -------------------- OTP HANDLING --------------------
+# ================= OTP System =================
 otp_storage = {}
 
 def generate_otp():
     return ''.join(random.choices(string.digits, k=6))
-
-def send_mail_console(email, subject, message):
-    """Instead of sending mail, print OTP in console/logs (for demo/POC)."""
-    print(f"\n============================")
-    print(f"📧 OTP for {email}")
-    print(f"Subject: {subject}")
-    print(f"Message: {message}")
-    print(f"============================\n")
 
 def is_otp_expired(stored_otp):
     if not stored_otp or 'expiry_time' not in stored_otp:
         return True
     return time.time() > stored_otp['expiry_time']
 
-# -------------------- ROUTES --------------------
+# Instead of sending email, just print OTP in console
+def send_mail(email, subject, message):
+    print(f"📩 OTP for {email}: {message}")  
+
+# ================= Routes =================
 @app.route('/', methods=['GET', 'POST'])
 def home():
     if request.method == 'POST':
@@ -84,18 +83,19 @@ def send_otp():
     email = request.form['email']
     role = request.form['role']
 
+    # Allow only company emails (optional)
     if not email.endswith('@amdocs.com'):
         flash("Only @amdocs.com email addresses are allowed!", "danger")
         return redirect(url_for('home'))
 
     user = User.query.filter_by(email=email).first()
 
-    if role in ["judge", "admin"]:
+    if role in ["judge", "admin"]:  
         if not user:
             flash("Email not registered!", "danger")
             return redirect(url_for('home'))
         if user.role != role:
-            flash("Role mismatch.", "danger")
+            flash("Role mismatch. Please choose correct role.", "danger")
             return redirect(url_for('home'))
 
     if role == "audience" and not user:
@@ -104,15 +104,14 @@ def send_otp():
         db.session.commit()
 
     otp = generate_otp()
-    expiry_time = time.time() + 900
+    expiry_time = time.time() + 900  # 15 min
     otp_storage[email] = {"otp": otp, "expiry_time": expiry_time}
 
-    # 🔑 Instead of real email, log OTP in console
     subject = "Your OTP Code"
     message = f"Your OTP code is: {otp}"
-    send_mail_console(email, subject, message)
+    send_mail(email, subject, message)
 
-    flash(f"OTP generated for {email}. Check console logs!", "success")
+    flash(f"OTP sent to {email} (Check console log).", "success")
     return redirect(url_for('otp_verification', email=email))
 
 @app.route('/otp_verification', methods=['GET', 'POST'])
@@ -128,7 +127,7 @@ def otp_verification():
             return redirect(url_for('home'))
 
         if is_otp_expired(stored_otp):
-            flash("OTP expired.", "danger")
+            flash("OTP expired. Please request a new one.", "danger")
             del otp_storage[email]
             return redirect(url_for('home'))
 
@@ -141,13 +140,15 @@ def otp_verification():
                 session.permanent = True
                 login_user(user)
                 return redirect(url_for(f'{user.role}_dashboard'))
+            else:
+                flash("User not found.", "danger")
+                return redirect(url_for('home'))
         else:
-            flash("Invalid OTP.", "danger")
+            flash("Invalid OTP!", "danger")
             return redirect(url_for('otp_verification', email=email))
 
     return render_template('otp_verification.html', email=email)
 
-# -------------------- DASHBOARDS --------------------
 @app.route('/judge_dashboard', methods=['GET', 'POST'])
 @login_required
 def judge_dashboard():
@@ -160,6 +161,7 @@ def judge_dashboard():
                 idea.score_judge += int(score)
                 idea.total_score += int(score)
         db.session.commit()
+        update_scores()
         return redirect(url_for('thank_you'))
     return render_template('judge_dashboard.html', ideas=Idea.query.all())
 
@@ -175,6 +177,7 @@ def audience_dashboard():
                 idea.score_audience += int(score)
                 idea.total_score += int(score)
         db.session.commit()
+        update_scores()
         return redirect(url_for('thank_you'))
     return render_template('audience_dashboard.html', ideas=Idea.query.all())
 
@@ -184,7 +187,7 @@ def admin_dashboard():
     if current_user.role != 'admin':
         return redirect(url_for('home'))
     ideas = Idea.query.all()
-    winner = max(ideas, key=lambda i: i.total_score, default=None)
+    winner = max(ideas, key=lambda idea: idea.total_score, default=None)
     return render_template('admin_dashboard.html', ideas=ideas, winner=winner)
 
 @app.route('/result')
@@ -201,22 +204,20 @@ def logout():
     logout_user()
     return redirect(url_for('home'))
 
-# -------------------- SOCKET.IO EVENTS --------------------
-@socketio.on('submit_scores')
-def handle_score_submission(data):
-    for idea_id, score in data.items():
-        idea = Idea.query.get(int(idea_id))
-        if idea:
-            if current_user.role == 'judge':
-                idea.score_judge += int(score)
-            elif current_user.role == 'audience':
-                idea.score_audience += int(score)
-            idea.total_score = idea.score_judge + idea.score_audience
-        db.session.commit()
-    # Emit real-time score update
-    socketio.emit('update_scores', {i.id: i.total_score for i in Idea.query.all()})
+# ================= Real-time Scores =================
+def update_scores():
+    ideas = Idea.query.all()
+    scores = {idea.id: {
+        'judge': idea.score_judge,
+        'audience': idea.score_audience,
+        'total': idea.total_score,
+        'name': idea.name
+    } for idea in ideas}
+    winner = max(ideas, key=lambda idea: idea.total_score, default=None)
+    winner_data = {'name': winner.name, 'score': winner.total_score} if winner else None
+    socketio.emit('update_scores', {'scores': scores, 'winner': winner_data})
 
-# -------------------- MAIN --------------------
+# ================= Run App =================
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
