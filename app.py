@@ -13,7 +13,7 @@ app = Flask(__name__)
 app.secret_key = 'hello123'  # Replace with secure key in production
 
 # Enable Flask-SocketIO
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, async_mode='threading', cors_allowed_origins="*")
 
 # ================= Database Config =================
 DATABASE_URL = os.getenv("DATABASE_URL")
