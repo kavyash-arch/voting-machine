@@ -9,7 +9,8 @@
 <body>
     <div class="audience_dashboard_container">
         <h1>Audience Dashboard</h1>
-        <h3>Vote for the Ideas (Max 50 points per idea)</h3>
+        <h3>Vote for the Ideas </h3>
+
         <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
         <script>
             var socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port);
@@ -22,10 +23,10 @@
         
                 socket.emit('submit_scores', scores);
                 alert("Scores submitted successfully!");
-                window.location.href = "{{ url_for('thankyou') }}";
+                window.location.href = "{{ url_for('thank_you') }}";
             }
         </script>
-        
+
         <form onsubmit="submitScores(); return false;">
             {% for idea in ideas %}
                 <label for="score_{{ idea.id }}">{{ idea.name }}:</label>
@@ -38,6 +39,7 @@
             {% endfor %}
             <button type="submit">Submit Scores</button>
         </form>
+
         
         
     </div>

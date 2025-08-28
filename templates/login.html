@@ -23,7 +23,7 @@
         {% endwith %}
 
         <!-- Login form -->
-        <form action="{{ url_for('login') }}" method="POST">
+        <form action="{{ url_for('send_otp') }}" method="POST">
             <label for="email">Email</label>
             <input type="email" name="email" id="email" placeholder="Enter your email" required>
         
@@ -34,7 +34,8 @@
                 <option value="admin">Admin</option>
             </select>
 
-            <input type="submit" value="Login">
+        
+            <input type="submit" value="Send OTP">
         </form>
     </div>
 

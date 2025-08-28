@@ -9,24 +9,25 @@
 <body>
     <div class="judge_dashboard_container">
     <h1>Judge Dashboard</h1>
-    <h3>Score the Ideas (Max 100 points per idea)</h3>
+    <h3>Score the Ideas </h3>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <script>
         var socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port);
     
-        function submitScores() {
-            let scores = {};
+    function submitScores() {
+    let scores = {};
             document.querySelectorAll("select").forEach(select => {
                 scores[select.name] = select.value;
             });
     
             socket.emit('submit_scores', scores);
             alert("Scores submitted successfully!");
-            window.location.href = "{{ url_for('thankyou') }}";
-        }
+            window.location.href = "{{ url_for('thank_you') }}";
+}
+
     </script>
-    
-    
+
+
     <form onsubmit="submitScores(); return false;">
         {% for idea in ideas %}
             <label for="score_{{ idea.id }}">Score for {{ idea.name }}:</label>
@@ -39,8 +40,6 @@
         {% endfor %}
         <button type="submit">Submit Scores</button>
     </form>
-    
-    
 </div>
 </body>
 </html>

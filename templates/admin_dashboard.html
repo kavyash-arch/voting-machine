@@ -21,9 +21,9 @@
                 let winner = data.winner;
         
                 for (const [ideaId, ideaData] of Object.entries(scores)) {
-                    document.getElementById(`judge_score_${ideaId}`).innerText = ideaData.judge;
-                    document.getElementById(`audience_score_${ideaId}`).innerText = ideaData.audience;
-                    document.getElementById(`total_score_${ideaId}`).innerText = ideaData.total;
+                    document.getElementById(`judge_score_${idea.Id}`).innerText = ideaData.judge;
+                    document.getElementById(`audience_score_${idea.Id}`).innerText = ideaData.audience;
+                    document.getElementById(`total_score_${idea.Id}`).innerText = ideaData.total;
                 }
         
                 // Update Winner
@@ -33,9 +33,6 @@
                 }
             });
         </script>
-    
-        
-
 <table>
     <thead>
         <tr>
@@ -57,14 +54,12 @@
     </tbody>
 </table>
 
-<h2>Winner</h2>
+       <h2>Winner</h2>
 <p><strong id="winner_name">
     {% if winner %}{{ winner.name }}
     {% else %}No winner yet{% endif %}</strong> 
      is the winner with a total score of <strong id="winner_score">
     {% if winner %}{{ winner.total_score }}{% else %}0{% endif %}</strong>🎉.</p>
-
-       
     </div>
 </body>
 </html>
