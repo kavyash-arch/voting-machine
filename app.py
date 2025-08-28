@@ -1,38 +1,33 @@
 import random
 import string
 import time
-from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 import os
 
-# Flask app init
+# ---------------- Flask App ----------------
 app = Flask(__name__)
-app.secret_key = 'hello123'  # Replace with secure key in production
+app.secret_key = os.environ.get("SECRET_KEY", "supersecret123")  # Use env var in production
 
 # Enable Flask-SocketIO
 socketio = SocketIO(app, async_mode='threading', cors_allowed_origins="*")
 
-# ================= Database Config =================
+# ---------------- Database Config ----------------
 DATABASE_URL = os.getenv("DATABASE_URL")
-
-if DATABASE_URL:  # Example: mysql+pymysql://user:pass@host/db
+if DATABASE_URL:
     app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
-else:  # Fallback to SQLite (works on Render)
+else:
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///voting.db'
-
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
-# DB init
 db = SQLAlchemy(app)
 
-# ================= Login Manager =================
+# ---------------- Login Manager ----------------
 login_manager = LoginManager(app)
 login_manager.login_view = 'home'
 
-# ================= Models =================
+# ---------------- Models ----------------
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
@@ -49,7 +44,7 @@ class Idea(db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# ================= OTP System =================
+# ---------------- OTP System ----------------
 otp_storage = {}
 
 def generate_otp():
@@ -60,11 +55,10 @@ def is_otp_expired(stored_otp):
         return True
     return time.time() > stored_otp['expiry_time']
 
-# Instead of sending email, just print OTP in console
 def send_mail(email, subject, message):
-    print(f"📩 OTP for {email}: {message}")  
+    print(f"📩 OTP for {email}: {message}")  # Prints OTP in Render logs
 
-# ================= Routes =================
+# ---------------- Routes ----------------
 @app.route('/', methods=['GET', 'POST'])
 def home():
     if request.method == 'POST':
@@ -83,19 +77,14 @@ def send_otp():
     email = request.form['email']
     role = request.form['role']
 
-    # Allow only company emails (optional)
     if not email.endswith('@amdocs.com'):
         flash("Only @amdocs.com email addresses are allowed!", "danger")
         return redirect(url_for('home'))
 
     user = User.query.filter_by(email=email).first()
-
-    if role in ["judge", "admin"]:  
-        if not user:
-            flash("Email not registered!", "danger")
-            return redirect(url_for('home'))
-        if user.role != role:
-            flash("Role mismatch. Please choose correct role.", "danger")
+    if role in ["judge", "admin"]:
+        if not user or user.role != role:
+            flash("Invalid email or role.", "danger")
             return redirect(url_for('home'))
 
     if role == "audience" and not user:
@@ -104,12 +93,8 @@ def send_otp():
         db.session.commit()
 
     otp = generate_otp()
-    expiry_time = time.time() + 900  # 15 min
-    otp_storage[email] = {"otp": otp, "expiry_time": expiry_time}
-
-    subject = "Your OTP Code"
-    message = f"Your OTP code is: {otp}"
-    send_mail(email, subject, message)
+    otp_storage[email] = {"otp": otp, "expiry_time": time.time() + 900}  # 15 min
+    send_mail(email, "Your OTP Code", f"Your OTP code is: {otp}")
 
     flash(f"OTP sent to {email} (Check console log).", "success")
     return redirect(url_for('otp_verification', email=email))
@@ -117,22 +102,15 @@ def send_otp():
 @app.route('/otp_verification', methods=['GET', 'POST'])
 def otp_verification():
     email = request.args.get('email')
-
     if request.method == 'POST':
         entered_otp = request.form['otp']
-        stored_otp = otp_storage.get(email, None)
-
-        if not stored_otp:
-            flash("No OTP found. Please request a new one.", "danger")
+        stored_otp = otp_storage.get(email)
+        if not stored_otp or is_otp_expired(stored_otp):
+            flash("OTP expired or invalid. Please request a new one.", "danger")
+            otp_storage.pop(email, None)
             return redirect(url_for('home'))
-
-        if is_otp_expired(stored_otp):
-            flash("OTP expired. Please request a new one.", "danger")
-            del otp_storage[email]
-            return redirect(url_for('home'))
-
         if entered_otp == stored_otp['otp']:
-            del otp_storage[email]
+            otp_storage.pop(email, None)
             user = User.query.filter_by(email=email).first()
             if user:
                 session['role'] = user.role
@@ -140,13 +118,11 @@ def otp_verification():
                 session.permanent = True
                 login_user(user)
                 return redirect(url_for(f'{user.role}_dashboard'))
-            else:
-                flash("User not found.", "danger")
-                return redirect(url_for('home'))
+            flash("User not found.", "danger")
+            return redirect(url_for('home'))
         else:
             flash("Invalid OTP!", "danger")
             return redirect(url_for('otp_verification', email=email))
-
     return render_template('otp_verification.html', email=email)
 
 @app.route('/judge_dashboard', methods=['GET', 'POST'])
@@ -204,21 +180,18 @@ def logout():
     logout_user()
     return redirect(url_for('home'))
 
-# ================= Real-time Scores =================
+# ---------------- Real-time Scores ----------------
 def update_scores():
     ideas = Idea.query.all()
-    scores = {idea.id: {
-        'judge': idea.score_judge,
-        'audience': idea.score_audience,
-        'total': idea.total_score,
-        'name': idea.name
-    } for idea in ideas}
+    scores = {idea.id: {'judge': idea.score_judge, 'audience': idea.score_audience,
+                        'total': idea.total_score, 'name': idea.name} for idea in ideas}
     winner = max(ideas, key=lambda idea: idea.total_score, default=None)
     winner_data = {'name': winner.name, 'score': winner.total_score} if winner else None
     socketio.emit('update_scores', {'scores': scores, 'winner': winner_data})
 
-# ================= Run App =================
+# ---------------- Run App ----------------
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-    socketio.run(app, debug=True, port=5000, allow_unsafe_werkzeug=True)
+    port = int(os.environ.get("PORT", 5000))  # Render dynamic port
+    socketio.run(app, host='0.0.0.0', port=port, allow_unsafe_werkzeug=True)
