@@ -6,6 +6,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 import os
+import sys
 
 # ---------------- Flask App ----------------
 app = Flask(__name__)
@@ -55,8 +56,11 @@ def is_otp_expired(stored_otp):
         return True
     return time.time() > stored_otp['expiry_time']
 
+
 def send_mail(email, subject, message):
-    print(f"📩 OTP for {email}: {message}")  # Prints OTP in Render logs
+    sys.stdout.flush()
+    print(f"📩 OTP for {email}: {message}", flush=True)
+
 
 # ---------------- Routes ----------------
 @app.route('/', methods=['GET', 'POST'])
